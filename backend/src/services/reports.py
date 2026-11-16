@@ -22,13 +22,25 @@ def deliver(db, report):
         text=str(v)
         return "'"+text if text.startswith(('=','+','-','@','\t','\r')) else text
     writer.writerow([safe(c['label']) for c in cols])
-    for row in table.get('rows',[]): writer.writerow([safe(row.get(c['key'],'')) for c in cols])
-    data=out.getvalue().encode('utf-8')
+    for row in table.get('rows', []): writer.writerow([safe(row.get(c['key'], '')) for c in cols])
+    # 简报保留计算依据：任务固定版本与算法口径
+    writer.writerow([])
+    writer.writerow([safe('计算版本'), safe(j.engine_version)])
+    writer.writerow([safe('计算依据'), safe(j.result.get('method', ''))])
+    if j.result.get('headline'):
+        h = j.result['headline']
+        writer.writerow([safe('核心指标'), safe(f"{h.get('diff_label', '改善量')}={h.get('diff')} 秒，"
+                                                 f"区间=[{h.get('low')}, {h.get('high')}]，p={h.get('p')}")])
+    data = out.getvalue().encode('utf-8')
     delivery=Delivery(report_id=report.id, created_at=time.time(), checksum=hashlib.sha256(data).hexdigest(), filename='', destination=report.destination)
     db.add(delivery); db.flush()
     delivery.filename=f'report-{report.id}-delivery-{delivery.id}.csv'
     os.makedirs(ARTIFACT_DIR,exist_ok=True)
     with open(os.path.join(ARTIFACT_DIR,delivery.filename),'wb') as f:f.write(data)
-    with open(os.path.join(ARTIFACT_DIR,delivery.filename+'.json'),'w') as f: json.dump({'job':j.name,'params':j.params,'result':j.result,'checksum':delivery.checksum},f,ensure_ascii=False,allow_nan=False)
+    with open(os.path.join(ARTIFACT_DIR, delivery.filename + '.json'), 'w') as f:
+        json.dump({'job': j.name, 'job_id': j.id, 'engine_version': j.engine_version,
+                   'method': j.result.get('method', ''), 'headline': j.result.get('headline'),
+                   'params': j.params, 'result': j.result, 'checksum': delivery.checksum},
+                  f, ensure_ascii=False, allow_nan=False)
     report.next_run=time.time()+report.interval_seconds
     return delivery
